@@ -37,16 +37,15 @@ async def main():
 
             load_dotenv()
             result = await runner.run(principal_agent, command, session=session)
+            response = result.final_output
 
-            if isinstance(result, SpotifyOperation):
-                response = agent.handle_command(result.final_output)
-                runner.run_sync(
+            if isinstance(response, SpotifyOperation):
+                response = agent.handle_command(response)
+                await runner.run(
                     principal_agent,
                     response,
                     session=session
                 )
-            else:
-                response = result.final_output
 
             print(response)
             await read_text(response)
