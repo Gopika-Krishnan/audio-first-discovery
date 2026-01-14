@@ -1,8 +1,12 @@
-import whisper
-import sounddevice as sd
-import numpy as np
 import tempfile
+
+import numpy as np
 import scipy.io.wavfile as wavfile
+import sounddevice as sd
+import whisper
+from openai import AsyncOpenAI
+from openai.helpers import LocalAudioPlayer
+
 
 class WhisperListener:
     def __init__(self, model_name="base"):
@@ -30,3 +34,15 @@ class WhisperListener:
         text = result["text"].strip()
         print(f"🗣️ You said: {text}")
         return text
+
+
+async def read_text(text: str) -> None:
+    openai = AsyncOpenAI()
+    async with openai.audio.speech.with_streaming_response.create(
+        model="gpt-4o-mini-tts",
+        voice="coral",
+        input=text,
+        instructions="Speak in a neutral, pleasant voice of an assistant",
+        response_format="pcm",
+    ) as response:
+        await LocalAudioPlayer().play(response)

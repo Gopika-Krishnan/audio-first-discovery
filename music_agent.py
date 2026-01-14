@@ -14,10 +14,13 @@ except ImportError:
 import os
 import json
 import time
-import sqlite3
-from pathlib import Path
 from typing import Dict, List, Optional, Any
+
+import sqlite3
+
 from config import get_config
+from models import SpotifyCommandType, SpotifyOperation
+
 
 class MusicDatabase:
     """
@@ -1377,509 +1380,109 @@ class ComprehensiveMusicAgent:
         
         return "❌ Could not analyze current music"
     
-    def handle_command(self, command: str) -> str:
-        """Handle natural language music commands"""
-        command_lower = command.lower()
-        
-        # Handle "sync" command (analyze current track)
-        if command_lower == "sync":
-            current = self.get_current_track()
-            if current.get("status") == "playing":
-                analysis = self._analyze_current_music(current)
-                return f"🔄 **Manual sync completed**\n\n{analysis}"
-            else:
-                return "❌ No track currently playing to sync"
-        
-        # Handle playback control commands
-        elif "next track" in command_lower or "skip" in command_lower or "next" in command_lower:
-            return self.next_track()
-        
-        elif "previous track" in command_lower or "back" in command_lower or "previous" in command_lower:
-            return self.previous_track()
-        
-        elif "pause" in command_lower:
-            return self.pause_playback()
-        
-        elif "resume" in command_lower or "unpause" in command_lower:
-            return self.resume_playback()
-        
-        # Handle "what's playing"
-        elif "what's playing" in command_lower or "current track" in command_lower:
-            current = self.get_current_track()
-            if current.get("status") == "playing":
-                return f"🎵 Now playing: {current['name']} by {current['artist']}"
-            else:
-                return f"ℹ️ {current.get('status', 'Unknown status')}"
-        
-        # Handle "like" commands
-        elif "like" in command_lower and ("artist" in command_lower or "this" in command_lower):
-            if "this" in command_lower:
-                # Like current playing artist
+    def handle_command(self, command: SpotifyOperation) -> str:
+        match command.type:
+            case SpotifyCommandType.NEXT:
+                return self.next_track()
+            case SpotifyCommandType.PREVIOUS:
+                return self.previous_track()
+            case SpotifyCommandType.PAUSE:
+                return self.pause_playback()
+            case SpotifyCommandType.RESUME:
+                return self.resume_playback()
+
+            case SpotifyCommandType.CURRENT:
+                current = self.get_current_track()
+                if current.get("status") == "playing":
+                    return f"🎵 Now playing: {current['name']} by {current['artist']}"
+                else:
+                    return f"ℹ️ {current.get('status', 'Unknown status')}"
+            case SpotifyCommandType.LIKE_ARTIST:
                 current = self.get_current_track()
                 if current.get("status") == "playing":
                     artist_name = current['artist']
                     success = self.db.add_favorite_artist(artist_name)
                     if success:
-                        return f"❤️ Added {artist_name} to your favorites!"
+                        return f"Added {artist_name} to your favorites!"
                     else:
-                        return f"ℹ️ {artist_name} is already in your favorites"
+                        return f"{artist_name} is already in your favorites"
                 else:
-                    return "❌ No track currently playing to like"
-            else:
-                # Extract artist name from command
-                # Look for patterns like "like john hiatt" or "I like artist john hiatt"
-                import re
-                patterns = [
-                    r'like\s+(?:artist\s+)?([a-zA-Z\s]+?)(?:\s*$|\s+artist)',
-                    r'i\s+like\s+([a-zA-Z\s]+?)(?:\s*$|\s+artist)',
-                    r'like\s+([a-zA-Z\s]+?)\s*$'
-                ]
-                
-                artist_name = None
-                for pattern in patterns:
-                    match = re.search(pattern, command_lower)
-                    if match:
-                        artist_name = match.group(1).strip()
+                    return "No track currently playing to like"
+
+            case SpotifyCommandType.PLAY_BY_TAGS:
+                # Extract the tag value (mood, genre, etc.)
+                tag_value = None
+                tag_category = None
+
+                # Common mood/genre words to look for
+                mood_words = ['mellow', 'chill', 'relaxing', 'calm', 'peaceful', 'energetic', 'upbeat', 'sad', 'happy',
+                              'aggressive']
+                genre_words = ['rock', 'jazz', 'classical', 'pop', 'electronic', 'country', 'blues', 'folk', 'metal',
+                               'punk', 'americana', 'roots']
+                tempo_words = ['fast', 'slow', 'medium', 'quick', 'upbeat', 'downtempo']
+
+                # Check for mood words
+                for word in mood_words:
+                    if word in command.search_phrase:
+                        tag_value = word
+                        tag_category = 'mood'
                         break
-                
-                if artist_name:
-                    success = self.db.add_favorite_artist(artist_name)
+
+                # Check for genre words if no mood found
+                if not tag_value:
+                    for word in genre_words:
+                        if word in command.search_phrase:
+                            tag_value = word
+                            tag_category = 'genre'
+                            break
+
+                # Check for tempo words if no genre found
+                if not tag_value:
+                    for word in tempo_words:
+                        if word in command.search_phrase:
+                            tag_value = word
+                            tag_category = 'tempo'
+                            break
+
+                if tag_value and tag_category:
+                    success = self.play_by_tags(tag_category, tag_value)
                     if success:
-                        return f"❤️ Added {artist_name} to your favorites!"
+                        return f"Now playing some {tag_value} music!"
                     else:
-                        return f"ℹ️ {artist_name} is already in your favorites"
+                        return f"Could not find any {tag_value} music. Try adding some tags first!"
                 else:
-                    return "❌ Could not determine which artist to like. Try 'like john hiatt' or 'I like this artist'"
-        
-        # Handle "favorites" or "show favorites" commands
-        elif "favorites" in command_lower or "favourite" in command_lower:
-            favorites = self.db.get_favorite_artists()
-            if favorites:
-                result = "❤️ Your favorite artists:\n"
-                for i, fav in enumerate(favorites[:10], 1):  # Show top 10
-                    result += f"{i}. {fav['artist']} (played {fav['play_count']} times)\n"
-                return result.strip()
-            else:
-                return "ℹ️ You haven't liked any artists yet. Try 'like john hiatt' or 'I like this artist'"
-        
-        # Handle tagging commands
-        elif "tag this" in command_lower or "add tag" in command_lower:
-            current = self.get_current_track()
-            if current.get("status") != "playing":
-                return "❌ No track currently playing to tag"
-            
-            # Extract tag from command
-            import re
-            patterns = [
-                r'tag this (?:as |with )?"([^"]+)"',  # "tag this as "high energy""
-                r'tag this (?:as |with )?(.+)',        # "tag this as high energy"
-                r'add tag "([^"]+)"',                   # "add tag "high energy""
-                r'add tag (.+)'                        # "add tag high energy"
-            ]
-            
-            tag_text = None
-            for pattern in patterns:
-                match = re.search(pattern, command_lower)
-                if match:
-                    tag_text = match.group(1).strip()
-                    break
-            
-            if not tag_text:
-                return "❌ Could not extract tag. Try 'tag this as high energy' or 'add tag \"workout music\"'"
-            
-            # Determine tag category (mood, genre, energy, etc.)
-            tag_category = 'mood'  # Default
-            energy_words = ['energy', 'energetic', 'pump', 'intense', 'powerful', 'driving']
-            genre_words = ['rock', 'jazz', 'electronic', 'pop', 'classical', 'hip hop', 'country', 'blues', 'metal', 'punk', 'folk']
-            mood_words = ['happy', 'sad', 'mellow', 'chill', 'upbeat', 'relaxing', 'peaceful', 'aggressive', 'romantic', 'nostalgic']
-            
-            if any(word in tag_text.lower() for word in energy_words):
-                tag_category = 'energy'
-            elif any(word in tag_text.lower() for word in genre_words):
-                tag_category = 'genre'
-            elif any(word in tag_text.lower() for word in mood_words):
-                tag_category = 'mood'
-            
-            # Add tag to current track
-            success = self.db.add_tag('track', current['name'], tag_category, tag_text, added_by='user')
-            if success:
-                return f"🏷️ Tagged '{current['name']}' by {current['artist']} as: {tag_text}"
-            else:
-                return f"❌ Failed to add tag"
-        
-        # Handle "show tags" command
-        elif "show tags" in command_lower or "what tags" in command_lower:
-            current = self.get_current_track()
-            if current.get("status") != "playing":
-                return "❌ No track currently playing to show tags for"
-            
-            tags = self.db.get_tags_for_entity('track', current['name'])
-            if tags:
-                result = f"🏷️ Tags for '{current['name']}' by {current['artist']}:\n"
-                for tag in tags:
-                    result += f"  • {tag['category']}: {tag['value']} (added {tag['added_date'][:10]})\n"
-                return result.strip()
-            else:
-                return f"🏷️ No tags found for '{current['name']}' by {current['artist']}"
-        
-        # Handle "find songs tagged" command
-        elif "find songs tagged" in command_lower or "play songs tagged" in command_lower:
-            import re
-            patterns = [
-                r'(?:find|play) songs tagged (?:as |with )?"([^"]+)"',
-                r'(?:find|play) songs tagged (?:as |with )?(.+)'
-            ]
-            
-            tag_text = None
-            for pattern in patterns:
-                match = re.search(pattern, command_lower)
-                if match:
-                    tag_text = match.group(1).strip()
-                    break
-            
-            if not tag_text:
-                return "❌ Could not extract tag. Try 'find songs tagged high energy'"
-            
-            # Search for tracks with this tag
-            tracks = self.db.get_entities_by_tag('mood', tag_text, 'track')
-            if not tracks:
-                tracks = self.db.get_entities_by_tag('energy', tag_text, 'track')
-            if not tracks:
-                tracks = self.db.get_entities_by_tag('genre', tag_text, 'track')
-            
-            if tracks:
-                if "play" in command_lower:
-                    # Play the first/highest confidence track
-                    track = tracks[0]
-                    # Try to find and play the track
-                    found_track = self.search_track_fuzzy(track['entity_name'])
-                    if found_track:
-                        success = self.play_track(found_track['uri'])
+                    return f"Could not identify the type of music you want. Try being more specific (e.g., 'play some rock music')"
+
+            case SpotifyCommandType.SEARCH:
+                track = self.search_track_fuzzy(command.search_phrase)
+                if track:
+                    return f"Found: {track['name']} by {track['artist']} from {track['album']}"
+                else:
+                    return f"Could not find: '{command.search_phrase}'"
+
+            case SpotifyCommandType.PLAY:
+                track = self.search_track_fuzzy(command.search_phrase)
+
+                if track:
+                    if track.get('is_playable', True):
+                        success = self.play_track(track['uri'])
                         if success:
-                            return f"🎵 Playing '{tag_text}' tagged song: {found_track['name']} by {found_track['artist']}"
+                            return f"Now playing: {track['name']} by {track['artist']}"
                         else:
-                            return f"❌ Failed to play {found_track['name']}"
+                            return f"Failed to play: {track['name']} by {track['artist']}"
                     else:
-                        return f"❌ Could not find track: {track['entity_name']}"
+                        return f"Track not available for playback: {track['name']} by {track['artist']}"
                 else:
-                    # Just list the tracks
-                    result = f"🏷️ Songs tagged '{tag_text}':\n"
-                    for i, track in enumerate(tracks[:10], 1):
-                        result += f"{i}. {track['entity_name']} (confidence: {track['confidence']:.1f})\n"
-                    return result.strip()
-            else:
-                return f"❌ No songs found with tag: '{tag_text}'"
-        
-        
-        # Handle "shuffle" commands
-        elif "shuffle" in command_lower and ("liked songs" in command_lower or "my liked" in command_lower):
-            success = self.shuffle_liked_songs()
-            if success:
-                return "🔀 Now shuffling your liked songs!"
-            else:
-                return "❌ Could not access your liked songs. Make sure you're authenticated with Spotify."
-        
-        elif "shuffle" in command_lower and "playlist" in command_lower:
-            # Extract playlist name
-            import re
-            patterns = [
-                r'shuffle playlist (.+)',
-                r'shuffle (.+?) playlist',
-                r'shuffle (.+)'
-            ]
-            
-            playlist_name = None
-            for pattern in patterns:
-                match = re.search(pattern, command_lower)
-                if match:
-                    playlist_name = match.group(1).strip()
-                    # Skip words that don't look like playlist names
-                    if playlist_name not in ['playlist', 'the', 'my']:
-                        break
-            
-            if playlist_name:
-                success = self.shuffle_playlist_by_name(playlist_name)
-                if success:
-                    return f"🔀 Now shuffling playlist: {playlist_name}"
+                    return f"Could not find track: '{command.search_phrase}'"
+
+            case SpotifyCommandType.SEARCH_BY_LYRICS:
+                track = self.search_by_lyrics(command.search_phrase)
+                if track:
+                    return f"Found: {track['name']} by {track['artist']}"
                 else:
-                    return f"❌ Could not find or shuffle playlist: '{playlist_name}'"
-            else:
-                return "❌ Please specify a playlist name. Try 'shuffle my favorites playlist'"
-        
-        # Handle playlist commands
-        elif "list playlists" in command_lower or "show playlists" in command_lower:
-            return self.list_playlists()
-        
-        elif "play playlist" in command_lower or "play the playlist" in command_lower:
-            # Extract playlist name
-            playlist_name = command_lower.replace("play playlist", "").replace("play the playlist", "").strip()
-            if playlist_name:
-                success = self.play_playlist_by_name(playlist_name)
-                if success:
-                    return f"🎵 Now playing playlist: {playlist_name}"
-                else:
-                    return f"❌ Could not find or play playlist: '{playlist_name}'"
-            else:
-                return "❌ Please specify a playlist name. Try 'play playlist my favorites'"
-        
-        elif "random from" in command_lower:
-            # Extract playlist name from various "random from [name]" patterns
-            import re
-            patterns = [
-                r'random from (.+?) playlist',
-                r'random from playlist (.+)',
-                r'play random from (.+?) playlist', 
-                r'play random from playlist (.+)',
-                r'random from (.+)',  # More flexible - just "random from [name]"
-                r'play random from (.+)'
-            ]
-            
-            playlist_name = None
-            for pattern in patterns:
-                match = re.search(pattern, command_lower)
-                if match:
-                    playlist_name = match.group(1).strip()
-                    # Skip if it looks like a tag-based request
-                    if not any(word in playlist_name for word in ['music', 'song', 'track']):
-                        break
-            
-            if playlist_name:
-                success = self.play_random_from_playlist(playlist_name)
-                if success:
-                    return f"🎲 Playing random track from playlist: {playlist_name}"
-                else:
-                    return f"❌ Could not find tracks in playlist: '{playlist_name}'"
-            else:
-                return "❌ Please specify a playlist name. Try 'random from odesza' or 'random from my favorites playlist'"
-        
-        # Handle "what kind of music is this" or "what genre is this"
-        elif any(phrase in command_lower for phrase in ["what kind of music", "what genre", "what style", "describe this music"]):
-            current = self.get_current_track()
-            if current.get("status") == "playing":
-                return self._analyze_current_music(current)
-            else:
-                return "❌ No track currently playing to analyze"
-        
-        # Handle lyric search
-        elif "where they say" in command_lower or "lyrics" in command_lower:
-            # Extract the lyric fragment
-            if "where they say" in command_lower:
-                lyric_fragment = command_lower.split("where they say")[1].strip().strip('"\'')
-            else:
-                lyric_fragment = command_lower.replace("lyrics", "").strip()
-            
-            track = self.search_by_lyrics(lyric_fragment)
-            if track:
-                return f"🎯 Found: {track['name']} by {track['artist']}"
-            else:
-                return f"❌ Could not find song with lyrics: '{lyric_fragment}'"
-        
-        # Handle tag-based requests like "play some mellow music" or "play something rock"
-        elif any(phrase in command_lower for phrase in ["play some", "play something", "i want to hear", "put on some"]) and any(tag in command_lower for tag in ["music", "song", "track"]):
-            # Extract the tag value (mood, genre, etc.)
-            tag_value = None
-            tag_category = None
-            
-            # Common mood/genre words to look for
-            mood_words = ['mellow', 'chill', 'relaxing', 'calm', 'peaceful', 'energetic', 'upbeat', 'sad', 'happy', 'aggressive']
-            genre_words = ['rock', 'jazz', 'classical', 'pop', 'electronic', 'country', 'blues', 'folk', 'metal', 'punk', 'americana', 'roots']
-            tempo_words = ['fast', 'slow', 'medium', 'quick', 'upbeat', 'downtempo']
-            
-            # Check for mood words
-            for word in mood_words:
-                if word in command_lower:
-                    tag_value = word
-                    tag_category = 'mood'
-                    break
-            
-            # Check for genre words if no mood found
-            if not tag_value:
-                for word in genre_words:
-                    if word in command_lower:
-                        tag_value = word
-                        tag_category = 'genre'
-                        break
-            
-            # Check for tempo words if no genre found
-            if not tag_value:
-                for word in tempo_words:
-                    if word in command_lower:
-                        tag_value = word
-                        tag_category = 'tempo'
-                        break
-            
-            if tag_value and tag_category:
-                success = self.play_by_tags(tag_category, tag_value)
-                if success:
-                    return f"🎵 Now playing some {tag_value} music!"
-                else:
-                    return f"❌ Could not find any {tag_value} music. Try adding some tags first!"
-            else:
-                return f"❌ Could not identify the type of music you want. Try being more specific (e.g., 'play some rock music')"
-        
-        # Handle "play me some [artist]" requests
-        elif "play me some" in command_lower or "play some" in command_lower:
-            # Extract artist name
-            if "play me some" in command_lower:
-                artist_name = command_lower.replace("play me some", "").strip()
-            else:
-                artist_name = command_lower.replace("play some", "").strip()
-            
-            # Skip if this looks like a tag-based request
-            if any(word in artist_name for word in ['music', 'song', 'track']):
-                return f"❌ Could not understand the request. Try 'play some mellow music' or 'play me some Enya'"
-            
-            success = self.play_artist_collection(artist_name)
-            if success:
-                return f"🎵 Now playing some {artist_name}!"
-            else:
-                return f"❌ Could not find collection for: '{artist_name}'"
-        
-        # Handle regular play requests
-        elif "play" in command_lower and not "playing" in command_lower:
-            query = command_lower.replace("play", "").strip()
-            track = self.search_track_fuzzy(query)
-            
-            if track:
-                if track.get('is_playable', True):
-                    success = self.play_track(track['uri'])
-                    if success:
-                        return f"🎵 Now playing: {track['name']} by {track['artist']}"
-                    else:
-                        return f"❌ Failed to play: {track['name']} by {track['artist']}"
-                else:
-                    return f"❌ Track not available for playback: {track['name']} by {track['artist']}"
-            else:
-                return f"❌ Could not find track: '{query}'"
-        
-        # Handle search requests
-        elif "search" in command_lower or "find" in command_lower:
-            query = command_lower.replace("search for", "").replace("find", "").strip()
-            track = self.search_track_fuzzy(query)
-            
-            if track:
-                return f"🎵 Found: {track['name']} by {track['artist']} from {track['album']}"
-            else:
-                return f"❌ Could not find: '{query}'"
-        
-        # Handle relationship commands
-        elif "add relationship" in command_lower or "this is" in command_lower:
-            current = self.get_current_track()
-            if current.get("status") != "playing":
-                return "❌ No track currently playing to add relationship for"
-            
-            # Parse relationship patterns
-            import re
-            patterns = [
-                r'this is (?:a )?remix of ([^"]+) by ([^"]+)',
-                r'this is (?:a )?cover of ([^"]+) by ([^"]+)',
-                r'this (?:was )?influenced by ([^"]+) by ([^"]+)',
-                r'add relationship this is remix of ([^"]+) by ([^"]+)',
-                r'add relationship this is cover of ([^"]+) by ([^"]+)',
-            ]
-            
-            relationship_type = None
-            target_name = None
-            target_artist = None
-            
-            for pattern in patterns:
-                match = re.search(pattern, command_lower)
-                if match:
-                    target_name = match.group(1).strip()
-                    target_artist = match.group(2).strip()
-                    
-                    if "remix" in pattern:
-                        relationship_type = "remix_of"
-                    elif "cover" in pattern:
-                        relationship_type = "cover_of"
-                    elif "influenced" in pattern:
-                        relationship_type = "influenced_by"
-                    break
-            
-            if not (relationship_type and target_name and target_artist):
-                return "❌ Could not parse relationship. Try: 'this is remix of sweet home alabama by lynyrd skynyrd'"
-            
-            # Add the relationship
-            success = self.db.add_relationship(
-                source_type='track',
-                source_name=current['name'],
-                source_artist=current['artist'],
-                target_type='track', 
-                target_name=target_name,
-                target_artist=target_artist,
-                relationship_type=relationship_type,
-                notes=f"Added via voice command: {command}"
-            )
-            
-            if success:
-                return f"🔗 Added relationship: '{current['name']}' by {current['artist']} is {relationship_type.replace('_', ' ')} '{target_name}' by {target_artist}"
-            else:
-                return "❌ Failed to add relationship"
-        
-        # Handle "show relationships" command  
-        elif "show relationships" in command_lower or "what relationships" in command_lower:
-            current = self.get_current_track()
-            if current.get("status") != "playing":
-                return "❌ No track currently playing to show relationships for"
-            
-            relationships = self.db.get_relationships_for_entity('track', current['name'], current['artist'])
-            if relationships:
-                result = f"🔗 Relationships for '{current['name']}' by {current['artist']}:\n"
-                for rel in relationships:
-                    direction = "➡️" if rel['direction'] == 'outgoing' else "⬅️"
-                    result += f"  {direction} {rel['relationship_type'].replace('_', ' ')}: {rel['related_name']} by {rel['related_artist']}\n"
-                return result.strip()
-            else:
-                return f"🔗 No relationships found for '{current['name']}' by {current['artist']}"
-        
-        # Handle lyrics requests
-        elif "lyrics" in command_lower:
-            # Try to get lyrics for current track
-            current = self.get_current_track()
-            if current.get("status") == "playing":
-                lyrics = self.get_track_lyrics(current['artist'], current['name'])
-                if lyrics:
-                    return f"🎵 First few lines of {current['name']} by {current['artist']}:\n{lyrics}"
-                else:
-                    return f"❌ Could not find lyrics for {current['name']} by {current['artist']}"
-            else:
-                return "❌ No track currently playing"
-        
-        return f"❓ I don't understand: '{command}'\n\nTry:\n• play high hopes pink floyd\n• play me some enya\n• next track / skip\n• previous track / back\n• pause / resume\n• what's playing\n• what's that song where they say 'encumbered forever'\n• search for bohemian rhapsody\n• lyrics"
+                    return f"Could not find song with lyrics: '{command.search_phrase}'"
 
-from voice_input import WhisperListener
-
-def main():
-    agent = ComprehensiveMusicAgent()
-    listener = WhisperListener(model_name="base")  # tiny | base | small | medium
-
-    print("🎵 Voice-enabled Music Agent")
-    print("🎙️ Say a command, or type it.")
-    print("🛑 Say 'quit' to exit\n")
-
-    while True:
-        try:
-            mode = input("⌨️  Press Enter to speak, or type a command: ").strip()
-
-            if mode == "":
-                command = listener.listen(duration=5)
-            else:
-                command = mode
-
-            if not command:
-                continue
-
-            if command.lower() in ["quit", "exit", "stop"]:
-                break
-
-            response = agent.handle_command(command)
-            print(response)
-            print()
-
-        except KeyboardInterrupt:
-            print("\n👋 Goodbye!")
-            break
-
-
-if __name__ == "__main__":
-    main()
+            case None:
+                return "I don't understand the command. Please state your request again"
+            case _:
+                return "I don't understand the command. Please state your request again"
