@@ -9,7 +9,9 @@ class SpotifyCommandType(enum.StrEnum):
     PAUSE = "Pause playback"
     RESUME = "Resume playback"
 
-    CURRENT = "What's is the track that's currently playing?"
+    CURRENT = "What is the track that's currently playing?"
+    DESCRIBE = "Describe, say more about the song"
+
     LIKE_ARTIST = "Like the currently played artist"
 
     PLAY_BY_TAGS = "Find and play content by general description: mood, genre etc."

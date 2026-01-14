@@ -1579,7 +1579,7 @@ class ComprehensiveMusicAgent:
         except Exception as e:
             print(f"❌ Error analyzing music: {e}")
             return f"❌ Error analyzing {track_name} by {artist_name}: {str(e)}"
-        
+
         return "❌ Could not analyze current music"
 
 
@@ -1656,14 +1656,14 @@ class ComprehensiveMusicAgent:
                 else:
                     return f"Could not identify the type of music you want. Try being more specific (e.g., 'play some rock music')"
 
-            case SpotifyCommandType.SEARCH:
+            case SpotifyCommandType.SEARCH_BY_NAME:
                 track = self.search_track_fuzzy(command.search_phrase)
                 if track:
                     return f"Found: {track['name']} by {track['artist']} from {track['album']}"
                 else:
                     return f"Could not find: '{command.search_phrase}'"
 
-            case SpotifyCommandType.PLAY:
+            case SpotifyCommandType.PLAY_BY_NAME:
                 track = self.search_track_fuzzy(command.search_phrase)
 
                 if track:
