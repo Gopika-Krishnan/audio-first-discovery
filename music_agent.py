@@ -11,6 +11,11 @@ try:
     from spotify_oauth import SpotifyAuth
 except ImportError:
     SpotifyAuth = None
+try:
+    from music_enrichment import MusicEnrichment
+except ImportError:
+    MusicEnrichment = None
+    print("⚠️  music_enrichment module not available")
 import os
 import json
 import time
@@ -162,6 +167,44 @@ class MusicDatabase:
                     )
                 ''')
                 
+                # Table for track enrichment data
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS track_enrichment (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        track_id TEXT,
+                        track_name TEXT NOT NULL,
+                        artist_name TEXT NOT NULL,
+                        instruments TEXT,
+                        inferred_instruments TEXT,
+                        recording_date TEXT,
+                        producer TEXT,
+                        studio TEXT,
+                        label TEXT,
+                        lastfm_tags TEXT,
+                        ai_description TEXT,
+                        enrichment_sources TEXT,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(track_name, artist_name)
+                    )
+                ''')
+
+                # Table for artist enrichment data
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS artist_enrichment (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        artist_id TEXT,
+                        artist_name TEXT UNIQUE NOT NULL,
+                        biography TEXT,
+                        formed_year INTEGER,
+                        origin_country TEXT,
+                        artist_type TEXT,
+                        members TEXT,
+                        similar_artists TEXT,
+                        musicbrainz_tags TEXT,
+                        updated_at TEXT NOT NULL
+                    )
+                ''')
+
                 conn.commit()
                 print("✅ Database tables initialized")
                 
@@ -687,6 +730,134 @@ class MusicDatabase:
                                    'track', influencer_name, influencer_artist,
                                    'influenced_by', notes)
 
+    # Track enrichment methods
+    def store_track_enrichment(self, enriched_data: Dict[str, Any]) -> bool:
+        """Store enriched track data in the database"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                cursor.execute('''
+                    INSERT OR REPLACE INTO track_enrichment 
+                    (track_id, track_name, artist_name, instruments, inferred_instruments,
+                     recording_date, producer, studio, label, lastfm_tags, ai_description,
+                     enrichment_sources, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                ''', (
+                    enriched_data.get('track_id'),
+                    enriched_data['track_name'],
+                    enriched_data['artist_name'],
+                    json.dumps(enriched_data.get('instruments', [])),
+                    json.dumps(enriched_data.get('inferred_instruments', [])),
+                    enriched_data.get('credits', {}).get('recording_date'),
+                    enriched_data.get('credits', {}).get('producer'),
+                    enriched_data.get('credits', {}).get('studio'),
+                    enriched_data.get('credits', {}).get('label'),
+                    json.dumps(enriched_data.get('lastfm_tags', [])),
+                    enriched_data.get('ai_description'),
+                    json.dumps(enriched_data.get('sources', []))
+                ))
+
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"❌ Error storing track enrichment: {e}")
+            return False
+
+    def get_track_enrichment(self, track_name: str, artist_name: str) -> Optional[Dict[str, Any]]:
+        """Get enriched data for a track"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT track_id, instruments, inferred_instruments, recording_date,
+                           producer, studio, label, lastfm_tags, ai_description,
+                           enrichment_sources, updated_at
+                    FROM track_enrichment
+                    WHERE track_name = ? AND artist_name = ?
+                ''', (track_name, artist_name))
+
+                result = cursor.fetchone()
+                if result:
+                    return {
+                        'track_id': result[0],
+                        'instruments': json.loads(result[1]) if result[1] else [],
+                        'inferred_instruments': json.loads(result[2]) if result[2] else [],
+                        'recording_date': result[3],
+                        'producer': result[4],
+                        'studio': result[5],
+                        'label': result[6],
+                        'lastfm_tags': json.loads(result[7]) if result[7] else [],
+                        'ai_description': result[8],
+                        'sources': json.loads(result[9]) if result[9] else [],
+                        'updated_at': result[10]
+                    }
+                return None
+        except Exception as e:
+            print(f"❌ Error getting track enrichment: {e}")
+            return None
+
+    def store_artist_enrichment(self, enriched_data: Dict[str, Any]) -> bool:
+        """Store enriched artist data in the database"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                artist_info = enriched_data.get('artist_info', {})
+
+                cursor.execute('''
+                    INSERT OR REPLACE INTO artist_enrichment 
+                    (artist_id, artist_name, biography, formed_year, origin_country,
+                     artist_type, members, similar_artists, musicbrainz_tags, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                ''', (
+                    enriched_data.get('artist_id'),
+                    enriched_data['artist_name'],
+                    enriched_data.get('artist_bio'),
+                    artist_info.get('life_span', {}).get('begin'),
+                    artist_info.get('country'),
+                    artist_info.get('type'),
+                    json.dumps(artist_info.get('members', [])),
+                    json.dumps(enriched_data.get('similar_artists', [])),
+                    json.dumps(artist_info.get('tags', []))
+                ))
+
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"❌ Error storing artist enrichment: {e}")
+            return False
+
+    def get_artist_enrichment(self, artist_name: str) -> Optional[Dict[str, Any]]:
+        """Get enriched data for an artist"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT artist_id, biography, formed_year, origin_country,
+                           artist_type, members, similar_artists, musicbrainz_tags, updated_at
+                    FROM artist_enrichment
+                    WHERE artist_name = ?
+                ''', (artist_name,))
+
+                result = cursor.fetchone()
+                if result:
+                    return {
+                        'artist_id': result[0],
+                        'biography': result[1],
+                        'formed_year': result[2],
+                        'origin_country': result[3],
+                        'artist_type': result[4],
+                        'members': json.loads(result[5]) if result[5] else [],
+                        'similar_artists': json.loads(result[6]) if result[6] else [],
+                        'musicbrainz_tags': json.loads(result[7]) if result[7] else [],
+                        'updated_at': result[8]
+                    }
+                return None
+        except Exception as e:
+            print(f"❌ Error getting artist enrichment: {e}")
+            return None
+
 class ComprehensiveMusicAgent:
     """
     A robust music agent that combines:
@@ -700,6 +871,7 @@ class ComprehensiveMusicAgent:
     def __init__(self, db_path: str = None):
         self.sp = None
         self.db = MusicDatabase(db_path)
+        self.enrichment = MusicEnrichment() if MusicEnrichment else None
         self.setup_spotify_connection()
         
     def setup_spotify_connection(self):
@@ -1230,9 +1402,10 @@ class ComprehensiveMusicAgent:
             print(f"❌ Error getting lyrics: {e}")
             return None
     
-    def _analyze_current_music(self, current_track: Dict[str, str]) -> str:
+    def _analyze_current_music(self, current_track: Dict[str, str], use_enrichment: bool = False) -> str:
         """
         Analyze the currently playing music and provide genre/mood information
+        If use_enrichment is True, fetch additional data from external sources
         """
         if not self.sp:
             return "❌ Spotify API not available for analysis"
@@ -1345,12 +1518,41 @@ class ComprehensiveMusicAgent:
                     analysis += f"😊 **Mood**: {mood_desc}\n"
                     analysis += f"💃 **Danceability**: {dance_desc}\n"
                     analysis += f"🥁 **Tempo**: {tempo_desc} ({int(tempo)} BPM)\n"
-                    
-                    # Add release year if available
-                    release_date = track['album']['release_date']
-                    if release_date:
-                        year = release_date.split('-')[0]
-                        analysis += f"📅 **Released**: {year}\n"
+
+                # If enrichment is requested and available
+                if use_enrichment and self.enrichment and audio_features:
+                    analysis += "\n" + "="*60 + "\n"
+                    analysis += "🌟 **ENHANCED DESCRIPTION** 🌟\n"
+                    analysis += "="*60 + "\n\n"
+
+                    # Check if we have cached enrichment data
+                    cached = self.db.get_track_enrichment(track_name, artist_name)
+
+                    if cached:
+                        print("✅ Using cached enrichment data")
+                        enriched = {
+                            'track_name': track_name,
+                            'artist_name': artist_name,
+                            **cached
+                        }
+                    else:
+                        # Get fresh enrichment data
+                        track_info = {
+                            'name': track_name,
+                            'artist': artist_name,
+                            'album': track['album']['name'],
+                            'id': track_id
+                        }
+
+                        enriched = self.enrichment.get_enhanced_description(track_info, audio_features)
+
+                        # Store in database
+                        self.db.store_track_enrichment(enriched)
+                        if 'artist_bio' in enriched or 'artist_info' in enriched:
+                            self.db.store_artist_enrichment(enriched)
+
+                    # Format the enriched data
+                    analysis += self.enrichment.format_enriched_description(enriched)
                 
                 # Suggest some tags based on the analysis
                 suggested_tags = []
@@ -1366,7 +1568,7 @@ class ComprehensiveMusicAgent:
                     if danceability > 0.7:
                         suggested_tags.append("danceable")
                 
-                if suggested_tags:
+                if suggested_tags and not use_enrichment:
                     analysis += f"\n🏷️ **Suggested tags**: {', '.join(suggested_tags)}"
                 
                 return analysis
@@ -1379,7 +1581,8 @@ class ComprehensiveMusicAgent:
             return f"❌ Error analyzing {track_name} by {artist_name}: {str(e)}"
         
         return "❌ Could not analyze current music"
-    
+
+
     def handle_command(self, command: SpotifyOperation) -> str:
         match command.type:
             case SpotifyCommandType.NEXT:
@@ -1481,6 +1684,13 @@ class ComprehensiveMusicAgent:
                     return f"Found: {track['name']} by {track['artist']}"
                 else:
                     return f"Could not find song with lyrics: '{command.search_phrase}'"
+
+            case SpotifyCommandType.DESCRIBE:
+                current = self.get_current_track()
+                if current.get("status") == "playing":
+                    return self._analyze_current_music(current, use_enrichment=True)
+                else:
+                    return "❌ No track currently playing to describe"
 
             case None:
                 return "I don't understand the command. Please state your request again"
