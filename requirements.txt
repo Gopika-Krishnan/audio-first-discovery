@@ -1,2 +1,4 @@
 spotipy>=2.22.0
 requests>=2.28.0
+musicbrainzngs>=0.7.1
+openai>=0.27.0

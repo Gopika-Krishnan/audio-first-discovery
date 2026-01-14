@@ -19,6 +19,7 @@ The Intelligent Music Agent is a comprehensive music management system that brid
 - 🎤 **Lyric-Based Discovery** - Find songs by remembering just a few words
 - 🏷️ **Intelligent Auto-Tagging** - Automatic genre, mood, and energy classification
 - 📊 **Music Analytics** - Deep analysis of tempo, danceability, and musical characteristics
+- 🌟 **Enhanced Descriptions** - Instrument detection, artist bios, and AI-powered analysis (NEW!)
 - ⚡ **Reactive Intelligence** - Automatically learns from your listening habits
 - 💾 **Persistent Learning** - SQLite-based knowledge retention across sessions
 - 🔄 **Real-Time Sync** - Live track change detection and analysis
@@ -191,6 +192,7 @@ print(client.music_command('sync'))
 ```bash
 ./music "what's playing"                    # Current track info
 ./music sync                                # Deep analysis of current track
+./music "describe this song"                # ENHANCED description with instruments, bio, AI analysis
 ./music "what kind of music is this"        # Genre/mood analysis
 ./music "tag this as high energy"           # Manual tagging
 ./music "show tags"                         # Show current track tags
@@ -269,6 +271,60 @@ The agent uses Spotify's Client Credentials flow, which has some limitations:
 - Audio features (energy, valence, etc.) may not be available
 - Some user-specific features are not accessible
 - Rate limiting applies to API calls
+
+## 🌟 Enhanced Music Descriptions (NEW!)
+
+The music agent now provides rich, detailed song descriptions beyond basic Spotify metadata:
+
+### Features
+- **🎸 Instrument Detection** - Identifies instruments from MusicBrainz or infers from audio
+- **👤 Artist Biographies** - Detailed background from Last.fm
+- **🏷️ Community Tags** - User-generated tags from Last.fm
+- **🎭 Similar Artists** - Discover related musicians
+- **🤖 AI Descriptions** - GPT-powered analysis (optional)
+- **📊 Production Credits** - Recording dates, producers, studios
+
+### Quick Start
+
+1. **Install dependencies**:
+   ```bash
+   ./setup_enrichment.sh
+   ```
+
+2. **Configure API keys** (edit `.env`):
+   ```bash
+   LASTFM_API_KEY=your_key_here
+   OPENAI_API_KEY=your_key_here  # Optional
+   ```
+
+3. **Try it**:
+   ```bash
+   ./music "describe this song"
+   ```
+
+### Example Output
+```
+🎵 **Bohemian Rhapsody** by **Queen**
+
+🎤 **Album**: A Night at the Opera
+📅 **Released**: 1975
+🎸 **Genres**: rock, classic rock, glam rock
+
+============================================================
+🌟 **ENHANCED DESCRIPTION** 🌟
+============================================================
+
+🤖 **AI Analysis:**
+This track features piano, electric guitar, and drums with orchestral 
+elements. Perfect for listeners who enjoy progressive rock...
+
+🎸 **Instruments**: piano, electric guitar, drums, vocals
+👤 **About the Artist**: Queen were a British rock band...
+🏷️ **Tags**: rock, progressive rock, british, 70s
+🎭 **Similar Artists**: David Bowie, Led Zeppelin, The Who
+```
+
+See [ENRICHMENT.md](ENRICHMENT.md) for full documentation.
 
 ## Recent Updates
 
