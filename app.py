@@ -3,7 +3,7 @@ import asyncio
 from agents import SQLiteSession, Runner
 from dotenv import load_dotenv
 
-from llm_agents import principal_agent
+from llm_agents import spotify_agent
 from models import SpotifyOperation
 from music_agent import ComprehensiveMusicAgent
 from voice import WhisperListener, read_text
@@ -11,10 +11,10 @@ from voice import WhisperListener, read_text
 
 async def main():
     load_dotenv()
-    agent = ComprehensiveMusicAgent()
+    spotify_handler = ComprehensiveMusicAgent()
     listener = WhisperListener(model_name="base")
     session = SQLiteSession("voice_app")
-    runner = Runner()
+    openai_runner = Runner()
 
     print("🎵 Voice-enabled Music Agent")
     print("🎙️ Say a command, or type it.")
@@ -25,7 +25,7 @@ async def main():
             mode = input("⌨️  Press Enter to speak, or type a command: ").strip()
 
             if mode == "":
-                command = listener.listen(duration=5)
+                command = listener.listen(duration=2)
             else:
                 command = mode
 
@@ -36,17 +36,13 @@ async def main():
                 break
 
             load_dotenv()
-            result = await runner.run(principal_agent, command, session=session)
+
+            result = await openai_runner.run(spotify_agent, command, session=session)
             response = result.final_output
+            print(response.verbal_response)
+            await read_text(response.verbal_response)
 
-            if isinstance(response, SpotifyOperation):
-                response = agent.handle_command(response)
-                await runner.run(
-                    principal_agent,
-                    response,
-                    session=session
-                )
-
+            response = spotify_handler.handle_command(response)
             print(response)
             await read_text(response)
             print()

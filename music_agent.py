@@ -25,6 +25,7 @@ import sqlite3
 
 from config import get_config
 from models import SpotifyCommandType, SpotifyOperation
+from music_info import ModelResponse
 
 
 class MusicDatabase:
@@ -32,22 +33,22 @@ class MusicDatabase:
     SQLite database for managing music agent local state
     Stores favorites, mood mappings, play history, and preferences
     """
-    
+
     def __init__(self, db_path: str = None):
         if db_path is None:
             # Use configurable path
             db_path = get_config().database_path
-        
+
         self.db_path = db_path
         self.init_database()
         print(f"📁 Database initialized: {self.db_path}")
-    
+
     def init_database(self):
         """Initialize the SQLite database with required tables"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 # Table for favorite artists
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS favorite_artists (
@@ -57,7 +58,7 @@ class MusicDatabase:
                         play_count INTEGER DEFAULT 0
                     )
                 ''')
-                
+
                 # Table for tags (replaces mood_mappings with more generic system)
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS tags (
@@ -73,7 +74,7 @@ class MusicDatabase:
                         UNIQUE(entity_type, entity_name, tag_category, tag_value)
                     )
                 ''')
-                
+
                 # Table for play history
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS play_history (
@@ -86,7 +87,7 @@ class MusicDatabase:
                         play_duration INTEGER DEFAULT 0
                     )
                 ''')
-                
+
                 # Table for lyric patterns (extend the hardcoded ones)
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS lyric_patterns (
@@ -99,7 +100,7 @@ class MusicDatabase:
                         added_date TEXT NOT NULL
                     )
                 ''')
-                
+
                 # Table for playlists
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS playlists (
@@ -117,7 +118,7 @@ class MusicDatabase:
                         added_date TEXT NOT NULL
                     )
                 ''')
-                
+
                 # Table for playlist tracks
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS playlist_tracks (
@@ -135,7 +136,7 @@ class MusicDatabase:
                         UNIQUE(playlist_id, spotify_track_id)
                     )
                 ''')
-                
+
                 # Table for musical relationships
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS musical_relationships (
@@ -155,8 +156,8 @@ class MusicDatabase:
                         added_by TEXT DEFAULT 'user',   -- 'user', 'system', 'api'
                         UNIQUE(source_type, source_name, source_artist, target_type, target_name, target_artist, relationship_type)
                     )
-                ''')                
-                
+                ''')
+
                 # Table for user preferences
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS preferences (
@@ -166,7 +167,7 @@ class MusicDatabase:
                         updated_date TEXT NOT NULL
                     )
                 ''')
-                
+
                 # Table for track enrichment data
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS track_enrichment (
@@ -207,10 +208,10 @@ class MusicDatabase:
 
                 conn.commit()
                 print("✅ Database tables initialized")
-                
+
         except Exception as e:
             print(f"❌ Database initialization error: {e}")
-    
+
     def add_favorite_artist(self, artist_name: str) -> bool:
         """Add an artist to favorites"""
         try:
@@ -225,7 +226,7 @@ class MusicDatabase:
         except Exception as e:
             print(f"❌ Error adding favorite artist: {e}")
             return False
-    
+
     def get_favorite_artists(self) -> List[Dict[str, Any]]:
         """Get all favorite artists"""
         try:
@@ -244,8 +245,8 @@ class MusicDatabase:
         except Exception as e:
             print(f"❌ Error getting favorite artists: {e}")
             return []
-    
-    def add_tag(self, entity_type: str, entity_name: str, tag_category: str, tag_value: str, 
+
+    def add_tag(self, entity_type: str, entity_name: str, tag_category: str, tag_value: str,
                 entity_id: str = None, confidence: float = 1.0, added_by: str = 'user') -> bool:
         """Add a tag to an entity (artist, track, album)"""
         try:
@@ -261,13 +262,13 @@ class MusicDatabase:
         except Exception as e:
             print(f"❌ Error adding tag: {e}")
             return False
-    
+
     def get_entities_by_tag(self, tag_category: str, tag_value: str, entity_type: str = None) -> List[Dict[str, Any]]:
         """Get entities that match a specific tag"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 if entity_type:
                     cursor.execute('''
                         SELECT entity_name, entity_id, confidence
@@ -282,7 +283,7 @@ class MusicDatabase:
                         WHERE tag_category = ? AND tag_value LIKE ?
                         ORDER BY confidence DESC
                     ''', (tag_category, f'%{tag_value}%'))
-                
+
                 return [{
                     'entity_name': row[0],
                     'entity_id': row[1] if len(row) > 2 else None,
@@ -292,7 +293,7 @@ class MusicDatabase:
         except Exception as e:
             print(f"❌ Error getting entities by tag: {e}")
             return []
-    
+
     def get_tags_for_entity(self, entity_type: str, entity_name: str) -> List[Dict[str, Any]]:
         """Get all tags for a specific entity"""
         try:
@@ -313,30 +314,30 @@ class MusicDatabase:
         except Exception as e:
             print(f"❌ Error getting tags for entity: {e}")
             return []
-    
+
     # Convenience methods for common tag operations
     def add_mood_tag(self, entity_type: str, entity_name: str, mood: str, confidence: float = 1.0) -> bool:
         """Add a mood tag - convenience method"""
         return self.add_tag(entity_type, entity_name, 'mood', mood, confidence=confidence)
-    
+
     def add_genre_tag(self, entity_type: str, entity_name: str, genre: str, confidence: float = 1.0) -> bool:
         """Add a genre tag - convenience method"""
         return self.add_tag(entity_type, entity_name, 'genre', genre, confidence=confidence)
-    
+
     def add_tempo_tag(self, entity_type: str, entity_name: str, tempo: str, confidence: float = 1.0) -> bool:
         """Add a tempo tag - convenience method"""
         return self.add_tag(entity_type, entity_name, 'tempo', tempo, confidence=confidence)
-    
+
     def get_artists_by_mood(self, mood: str) -> List[Dict[str, Any]]:
         """Get artists that match a specific mood - backward compatibility"""
         entities = self.get_entities_by_tag('mood', mood, 'artist')
         return [{'artist': e['entity_name'], 'confidence': e['confidence']} for e in entities]
-    
+
     def get_artists_by_genre(self, genre: str) -> List[Dict[str, Any]]:
         """Get artists that match a specific genre"""
         entities = self.get_entities_by_tag('genre', genre, 'artist')
         return [{'artist': e['entity_name'], 'confidence': e['confidence']} for e in entities]
-    
+
     def log_play_history(self, track_name: str, artist_name: str, album_name: str = None, spotify_uri: str = None) -> bool:
         """Log a track play to history"""
         try:
@@ -346,20 +347,20 @@ class MusicDatabase:
                     INSERT INTO play_history (track_name, artist_name, album_name, spotify_uri, played_at)
                     VALUES (?, ?, ?, ?, datetime('now'))
                 ''', (track_name, artist_name, album_name, spotify_uri))
-                
+
                 # Also increment play count for favorite artists
                 cursor.execute('''
                     UPDATE favorite_artists
                     SET play_count = play_count + 1
                     WHERE artist_name = ?
                 ''', (artist_name,))
-                
+
                 conn.commit()
                 return True
         except Exception as e:
             print(f"❌ Error logging play history: {e}")
             return False
-    
+
     def get_recent_plays(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get recent play history"""
         try:
@@ -380,7 +381,7 @@ class MusicDatabase:
         except Exception as e:
             print(f"❌ Error getting recent plays: {e}")
             return []
-    
+
     def set_preference(self, key: str, value: str) -> bool:
         """Set a user preference"""
         try:
@@ -395,7 +396,7 @@ class MusicDatabase:
         except Exception as e:
             print(f"❌ Error setting preference: {e}")
             return False
-    
+
     def get_preference(self, key: str, default: str = None) -> Optional[str]:
         """Get a user preference"""
         try:
@@ -407,14 +408,14 @@ class MusicDatabase:
         except Exception as e:
             print(f"❌ Error getting preference: {e}")
             return default
-    
+
     # Playlist management methods
     def store_playlist(self, playlist_data: Dict[str, Any]) -> bool:
         """Store a playlist in the database"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 # Insert or update playlist
                 cursor.execute('''
                     INSERT OR REPLACE INTO playlists 
@@ -434,32 +435,32 @@ class MusicDatabase:
                     playlist_data['uri'],
                     playlist_data['id']  # For the COALESCE check
                 ))
-                
+
                 conn.commit()
                 return True
-                
+
         except Exception as e:
             print(f"❌ Error storing playlist: {e}")
             return False
-    
+
     def store_playlist_tracks(self, playlist_id: str, tracks: List[Dict[str, Any]]) -> bool:
         """Store tracks for a playlist"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 # Get the database playlist ID
                 cursor.execute('SELECT id FROM playlists WHERE spotify_id = ?', (playlist_id,))
                 result = cursor.fetchone()
                 if not result:
                     print(f"❌ Playlist {playlist_id} not found in database")
                     return False
-                
+
                 db_playlist_id = result[0]
-                
+
                 # Clear existing tracks for this playlist
                 cursor.execute('DELETE FROM playlist_tracks WHERE playlist_id = ?', (db_playlist_id,))
-                
+
                 # Insert new tracks
                 for position, item in enumerate(tracks):
                     track = item['track']
@@ -480,20 +481,20 @@ class MusicDatabase:
                             item['added_at'],
                             position
                         ))
-                
+
                 conn.commit()
                 return True
-                
+
         except Exception as e:
             print(f"❌ Error storing playlist tracks: {e}")
             return False
-    
+
     def get_playlists(self, owner_only: bool = True) -> List[Dict[str, Any]]:
         """Get stored playlists"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 if owner_only:
                     # This would need the current user's ID - for now, get all
                     query = '''
@@ -510,7 +511,7 @@ class MusicDatabase:
                         FROM playlists
                         ORDER BY name
                     ''')
-                
+
                 return [{
                     'spotify_id': row[0],
                     'name': row[1],
@@ -522,17 +523,17 @@ class MusicDatabase:
                     'is_public': bool(row[7]),
                     'is_collaborative': bool(row[8])
                 } for row in cursor.fetchall()]
-                
+
         except Exception as e:
             print(f"❌ Error getting playlists: {e}")
             return []
-    
+
     def find_playlist_by_name(self, name: str, fuzzy: bool = True) -> Optional[Dict[str, Any]]:
         """Find a playlist by name (exact or fuzzy match)"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 # Try exact match first
                 cursor.execute('''
                     SELECT spotify_id, name, description, owner_name, track_count, 
@@ -541,7 +542,7 @@ class MusicDatabase:
                     WHERE LOWER(name) = LOWER(?)
                     LIMIT 1
                 ''', (name,))
-                
+
                 result = cursor.fetchone()
                 if result:
                     return {
@@ -553,7 +554,7 @@ class MusicDatabase:
                         'spotify_uri': result[5],
                         'last_synced': result[6]
                     }
-                
+
                 # Try fuzzy match if enabled
                 if fuzzy:
                     cursor.execute('''
@@ -564,7 +565,7 @@ class MusicDatabase:
                         ORDER BY LENGTH(name)
                         LIMIT 1
                     ''', (f'%{name}%',))
-                    
+
                     result = cursor.fetchone()
                     if result:
                         return {
@@ -576,23 +577,23 @@ class MusicDatabase:
                             'spotify_uri': result[5],
                             'last_synced': result[6]
                         }
-                
+
                 return None
-                
+
         except Exception as e:
             print(f"❌ Error finding playlist: {e}")
             return None
-    
+
     def get_playlist_tracks(self, playlist_name: str, limit: int = 50) -> List[Dict[str, Any]]:
         """Get tracks from a playlist by name"""
         try:
             playlist = self.find_playlist_by_name(playlist_name)
             if not playlist:
                 return []
-            
+
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 cursor.execute('''
                     SELECT pt.track_name, pt.artist_name, pt.album_name, pt.spotify_uri, pt.duration_ms
                     FROM playlist_tracks pt
@@ -601,7 +602,7 @@ class MusicDatabase:
                     ORDER BY pt.track_position
                     LIMIT ?
                 ''', (playlist['spotify_id'], limit))
-                
+
                 return [{
                     'name': row[0],
                     'artist': row[1],
@@ -609,14 +610,14 @@ class MusicDatabase:
                     'uri': row[3],
                     'duration_ms': row[4]
                 } for row in cursor.fetchall()]
-                
+
         except Exception as e:
             print(f"❌ Error getting playlist tracks: {e}")
             return []
-    
+
     # Musical relationships methods
     def add_relationship(self, source_type: str, source_name: str, source_artist: str,
-                        target_type: str, target_name: str, target_artist: str, 
+                        target_type: str, target_name: str, target_artist: str,
                         relationship_type: str, notes: str = None, confidence: float = 1.0,
                         source_id: str = None, target_id: str = None, added_by: str = 'user') -> bool:
         """Add a musical relationship between two entities"""
@@ -637,13 +638,13 @@ class MusicDatabase:
         except Exception as e:
             print(f"❌ Error adding relationship: {e}")
             return False
-    
+
     def get_relationships_for_entity(self, entity_type: str, entity_name: str, entity_artist: str = None) -> List[Dict[str, Any]]:
         """Get all relationships for a specific entity (as source or target)"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 # Get relationships where this entity is the source
                 cursor.execute('''
                     SELECT target_type, target_name, target_artist, relationship_type, 
@@ -663,10 +664,10 @@ class MusicDatabase:
                     ORDER BY added_date DESC
                 ''', (entity_type, entity_name, entity_artist, entity_artist,
                       entity_type, entity_name, entity_artist, entity_artist))
-                
+
                 return [{
                     'related_type': row[0],
-                    'related_name': row[1], 
+                    'related_name': row[1],
                     'related_artist': row[2],
                     'relationship_type': row[3],
                     'confidence': row[4],
@@ -675,11 +676,11 @@ class MusicDatabase:
                     'added_by': row[7],
                     'direction': row[8]
                 } for row in cursor.fetchall()]
-                
+
         except Exception as e:
             print(f"❌ Error getting relationships: {e}")
             return []
-    
+
     def get_relationships_by_type(self, relationship_type: str) -> List[Dict[str, Any]]:
         """Get all relationships of a specific type"""
         try:
@@ -693,7 +694,7 @@ class MusicDatabase:
                     WHERE relationship_type = ?
                     ORDER BY added_date DESC
                 ''', (relationship_type,))
-                
+
                 return [{
                     'source_type': row[0],
                     'source_name': row[1],
@@ -706,24 +707,24 @@ class MusicDatabase:
                     'notes': row[8],
                     'added_date': row[9]
                 } for row in cursor.fetchall()]
-                
+
         except Exception as e:
             print(f"❌ Error getting relationships by type: {e}")
             return []
-    
+
     # Convenience methods for common relationship types
     def add_remix_relationship(self, remix_name: str, remix_artist: str, original_name: str, original_artist: str, notes: str = None) -> bool:
         """Add a remix relationship"""
-        return self.add_relationship('track', remix_name, remix_artist, 
-                                   'track', original_name, original_artist, 
+        return self.add_relationship('track', remix_name, remix_artist,
+                                   'track', original_name, original_artist,
                                    'remix_of', notes)
-    
+
     def add_cover_relationship(self, cover_name: str, cover_artist: str, original_name: str, original_artist: str, notes: str = None) -> bool:
         """Add a cover relationship"""
         return self.add_relationship('track', cover_name, cover_artist,
                                    'track', original_name, original_artist,
                                    'cover_of', notes)
-    
+
     def add_influence_relationship(self, influenced_name: str, influenced_artist: str, influencer_name: str, influencer_artist: str, notes: str = None) -> bool:
         """Add an influence relationship"""
         return self.add_relationship('track', influenced_name, influenced_artist,
@@ -1600,61 +1601,30 @@ class ComprehensiveMusicAgent:
                     return f"🎵 Now playing: {current['name']} by {current['artist']}"
                 else:
                     return f"ℹ️ {current.get('status', 'Unknown status')}"
-            case SpotifyCommandType.LIKE_ARTIST:
+
+            case SpotifyCommandType.DESCRIBE_TRACK:
                 current = self.get_current_track()
-                if current.get("status") == "playing":
-                    artist_name = current['artist']
-                    success = self.db.add_favorite_artist(artist_name)
-                    if success:
-                        return f"Added {artist_name} to your favorites!"
-                    else:
-                        return f"{artist_name} is already in your favorites"
-                else:
-                    return "No track currently playing to like"
+                mr = ModelResponse()
+                input_text = f"Tell me more about the song: {current['name']} by {current['artist']}"
+                return mr.get_info(input_text)
 
-            case SpotifyCommandType.PLAY_BY_TAGS:
-                # Extract the tag value (mood, genre, etc.)
-                tag_value = None
-                tag_category = None
+            case SpotifyCommandType.DESCRIBE_ARTIST:
+                current = self.get_current_track()
+                mr = ModelResponse()
+                input_text = f"Tell me more about the artist: {current['artist']}"
+                return mr.get_info(input_text)
 
-                # Common mood/genre words to look for
-                mood_words = ['mellow', 'chill', 'relaxing', 'calm', 'peaceful', 'energetic', 'upbeat', 'sad', 'happy',
-                              'aggressive']
-                genre_words = ['rock', 'jazz', 'classical', 'pop', 'electronic', 'country', 'blues', 'folk', 'metal',
-                               'punk', 'americana', 'roots']
-                tempo_words = ['fast', 'slow', 'medium', 'quick', 'upbeat', 'downtempo']
+            case SpotifyCommandType.DESCRIBE_GENRE:
+                current = self.get_current_track()
+                mr = ModelResponse()
+                input_text = f"Tell me more about the genre of this song: {current['name']} by {current['artist']}"
+                return mr.get_info(input_text)
 
-                # Check for mood words
-                for word in mood_words:
-                    if word in command.search_phrase:
-                        tag_value = word
-                        tag_category = 'mood'
-                        break
-
-                # Check for genre words if no mood found
-                if not tag_value:
-                    for word in genre_words:
-                        if word in command.search_phrase:
-                            tag_value = word
-                            tag_category = 'genre'
-                            break
-
-                # Check for tempo words if no genre found
-                if not tag_value:
-                    for word in tempo_words:
-                        if word in command.search_phrase:
-                            tag_value = word
-                            tag_category = 'tempo'
-                            break
-
-                if tag_value and tag_category:
-                    success = self.play_by_tags(tag_category, tag_value)
-                    if success:
-                        return f"Now playing some {tag_value} music!"
-                    else:
-                        return f"Could not find any {tag_value} music. Try adding some tags first!"
-                else:
-                    return f"Could not identify the type of music you want. Try being more specific (e.g., 'play some rock music')"
+            case SpotifyCommandType.SIMILAR_MUSIC:
+                current = self.get_current_track()
+                mr = ModelResponse()
+                input_text = f"Suggest artists similar to: {current['artist']}"
+                return mr.get_info(input_text)
 
             case SpotifyCommandType.SEARCH_BY_NAME:
                 track = self.search_track_fuzzy(command.search_phrase)
@@ -1684,13 +1654,6 @@ class ComprehensiveMusicAgent:
                     return f"Found: {track['name']} by {track['artist']}"
                 else:
                     return f"Could not find song with lyrics: '{command.search_phrase}'"
-
-            case SpotifyCommandType.DESCRIBE:
-                current = self.get_current_track()
-                if current.get("status") == "playing":
-                    return self._analyze_current_music(current, use_enrichment=True)
-                else:
-                    return "❌ No track currently playing to describe"
 
             case None:
                 return "I don't understand the command. Please state your request again"
