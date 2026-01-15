@@ -967,17 +967,15 @@ class ComprehensiveMusicAgent:
             f'"{query}"',  # Exact phrase
             query.replace(" ", " AND "),  # Boolean search
         ]
+        key = search_type + "s"
 
         for search_query in search_queries:
             try:
                 results = self.sp.search(q=search_query, type=search_type, limit=5)
-                if results['tracks']['items']:
-                    track = results['tracks']['items'][0]
-                    print(f"✅ Found: {track['name']} by {track['artists'][0]['name']}")
+                if results[key]['items']:
+                    track = results[key]['items'][0]
                     return {
-                        'name': track['name'],
-                        'artist': track['artists'][0]['name'],
-                        'album': track['album']['name'],
+                        "name": "",
                         'uri': track['uri'],
                         'is_playable': track.get('is_playable', True)
                     }
@@ -985,27 +983,6 @@ class ComprehensiveMusicAgent:
                 print(f"❌ Search failed for '{search_query}': {e}")
                 continue
         
-        # Strategy 2: Artist-specific search if query contains artist hints
-        potential_artists = ["Pink Floyd", "Oingo Boingo", "The Beatles", "Queen"]  # Extend as needed
-        for artist in potential_artists:
-            if artist.lower() in query.lower():
-                try:
-                    artist_query = f'artist:"{artist}" {query.replace(artist, "").strip()}'
-                    results = self.sp.search(q=artist_query, type='track', limit=3)
-                    if results['tracks']['items']:
-                        track = results['tracks']['items'][0]
-                        print(f"✅ Found via artist search: {track['name']} by {track['artists'][0]['name']}")
-                        return {
-                            'name': track['name'],
-                            'artist': track['artists'][0]['name'],
-                            'album': track['album']['name'],
-                            'uri': track['uri'],
-                            'is_playable': track.get('is_playable', True)
-                        }
-                except Exception as e:
-                    continue
-        
-        print("❌ No tracks found")
         return None
     
     def play_artist_collection(self, artist_name: str) -> bool:
@@ -1487,6 +1464,7 @@ class ComprehensiveMusicAgent:
 
 
     def handle_command(self, command: SpotifyOperation) -> str:
+        print(command)
         match command.type:
             case SpotifyCommandType.NEXT:
                 return self.next_track()
@@ -1527,28 +1505,52 @@ class ComprehensiveMusicAgent:
                 mr = ModelResponse()
                 input_text = f"Suggest artists similar to: {current['artist']}"
                 return mr.get_info(input_text)["output"]
-
-            case (
-                SpotifyCommandType.PLAY_BY_TITLE,
-                SpotifyCommandType.PLAY_BY_ARTIST,
-                SpotifyCommandType.PLAY_BY_GENRE,
-            ):
-                search_type = {
-                    SpotifyCommandType.PLAY_BY_TITLE: "track",
-                    SpotifyCommandType.PLAY_BY_ARTIST: "artist",
-                    SpotifyCommandType.PLAY_BY_GENRE: "playlist"
-                }[command.type]
-                track = self.search_track_fuzzy(command.search_phrase, search_type)
+            
+            case SpotifyCommandType.PLAY_BY_TITLE:
+                track = self.search_track_fuzzy(command.search_phrase, "track")
 
                 if track:
                     if track.get('is_playable', True):
                         success = self.play_track(track['uri'])
                         if success:
-                            return f"Now playing: {track['name']} by {track['artist']}"
+                            current = self.get_current_track()
+                            return f"Now playing: {current['name']} by {current['artist']}"
                         else:
-                            return f"Failed to play: {track['name']} by {track['artist']}"
+                            return f"Failed to play: {command.search_phrase}"
                     else:
-                        return f"Track not available for playback: {track['name']} by {track['artist']}"
+                        return f"Track not available for playback: {command.search_phrase}"
+                else:
+                    return f"Could not find track: '{command.search_phrase}'"
+
+            case SpotifyCommandType.PLAY_BY_ARTIST:
+                track = self.search_track_fuzzy(command.search_phrase, "artist")
+
+                if track:
+                    if track.get('is_playable', True):
+                        success = self.play_track(track['uri'])
+                        if success:
+                            current = self.get_current_track()
+                            return f"Now playing: {current['name']} by {current['artist']}"
+                        else:
+                            return f"Failed to play: {command.search_phrase}"
+                    else:
+                        return f"Track not available for playback: {command.search_phrase}"
+                else:
+                    return f"Could not find track: '{command.search_phrase}'"
+            
+            case SpotifyCommandType.PLAY_BY_GENRE:
+                track = self.search_track_fuzzy(command.search_phrase, "playlist")
+
+                if track:
+                    if track.get('is_playable', True):
+                        success = self.play_track(track['uri'])
+                        if success:
+                            current = self.get_current_track()
+                            return f"Now playing: {current['name']} by {current['artist']}"
+                        else:
+                            return f"Failed to play: {command.search_phrase}"
+                    else:
+                        return f"Track not available for playback: {command.search_phrase}"
                 else:
                     return f"Could not find track: '{command.search_phrase}'"
 

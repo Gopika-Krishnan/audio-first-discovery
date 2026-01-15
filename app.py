@@ -39,13 +39,12 @@ async def main():
 
             result = await openai_runner.run(spotify_agent, command, session=session)
             response = result.final_output
-            print(response)
-            # print(response.verbal_response)
-            # await read_text(response.verbal_response)
+            print(response.verbal_response)
+            await read_text(response.verbal_response)
 
-            # response = spotify_handler.handle_command(response)
-            # print(response)
-            # await read_text(response)
+            response = spotify_handler.handle_command(response)
+            print(response)
+            await read_text(response)
             print()
 
         except KeyboardInterrupt:
