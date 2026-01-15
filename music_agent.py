@@ -953,7 +953,7 @@ class ComprehensiveMusicAgent:
         except:
             return {"status": "Error parsing track info"}
     
-    def search_track_fuzzy(self, query: str) -> Optional[Dict[str, Any]]:
+    def search_track_fuzzy(self, query: str, search_type: str) -> Optional[Dict[str, Any]]:
         """
         Fuzzy search for tracks using multiple strategies
         Handles partial lyrics, typos, and missing punctuation
@@ -961,18 +961,16 @@ class ComprehensiveMusicAgent:
         if not self.sp:
             return None
         
-        print(f"🔍 Searching for: '{query}'")
-        
         # Strategy 1: Direct search
         search_queries = [
             query,
             f'"{query}"',  # Exact phrase
             query.replace(" ", " AND "),  # Boolean search
         ]
-        
+
         for search_query in search_queries:
             try:
-                results = self.sp.search(q=search_query, type='track', limit=5)
+                results = self.sp.search(q=search_query, type=search_type, limit=5)
                 if results['tracks']['items']:
                     track = results['tracks']['items'][0]
                     print(f"✅ Found: {track['name']} by {track['artists'][0]['name']}")
@@ -1008,48 +1006,6 @@ class ComprehensiveMusicAgent:
                     continue
         
         print("❌ No tracks found")
-        return None
-    
-    def search_by_lyrics(self, lyric_fragment: str) -> Optional[Dict[str, Any]]:
-        """
-        Search for songs by lyric fragments
-        Uses web search and pattern matching
-        """
-        print(f"🔍 Searching by lyrics: '{lyric_fragment}'")
-        
-        # Known lyric patterns (extend this as you discover more)
-        lyric_patterns = {
-            "encumbered forever by desire and ambition": {
-                "artist": "Pink Floyd",
-                "song": "High Hopes",
-                "uri": "spotify:track:5a4MgIUSf9K8wXLSm6xPEx"
-            },
-            "wish real hard when I close my eyes": {
-                "artist": "Oingo Boingo", 
-                "song": "Try To Believe",
-                "uri": "spotify:track:7kVcbpFqcqBixHV73tNFns"
-            }
-        }
-        
-        # Check for exact or partial matches
-        for pattern, song_info in lyric_patterns.items():
-            if pattern.lower() in lyric_fragment.lower() or any(
-                word in lyric_fragment.lower() for word in pattern.lower().split()
-            ):
-                print(f"✅ Found via lyric pattern: {song_info['song']} by {song_info['artist']}")
-                return {
-                    'name': song_info['song'],
-                    'artist': song_info['artist'],
-                    'uri': song_info['uri'],
-                    'is_playable': True
-                }
-        
-        # Fallback: Try to search by key words from the lyric
-        key_words = [word for word in lyric_fragment.split() if len(word) > 3]
-        if key_words:
-            search_query = " ".join(key_words[:3])  # Use first 3 significant words
-            return self.search_track_fuzzy(search_query)
-        
         return None
     
     def play_artist_collection(self, artist_name: str) -> bool:
@@ -1109,61 +1065,7 @@ class ComprehensiveMusicAgent:
             print(f"❌ Top tracks fallback failed: {e}")
         
         return False
-    
-    def play_by_tags(self, tag_category: str, tag_value: str) -> bool:
-        """
-        Play music based on tags - handles "play some mellow music" requests
-        Searches for both artists and tracks with matching tags
-        """
-        print(f"🔍 Looking for {tag_value} {tag_category} music...")
-        
-        # Get entities (artists and tracks) with matching tags
-        entities = self.db.get_entities_by_tag(tag_category, tag_value)
-        
-        if not entities:
-            print(f"❌ No {tag_value} {tag_category} music found in database")
-            return False
-        
-        # Separate artists and tracks
-        artists = [e for e in entities if e['entity_type'] == 'artist']
-        tracks = [e for e in entities if e['entity_type'] == 'track']
-        
-        print(f"✅ Found {len(artists)} artists and {len(tracks)} tracks with {tag_value} {tag_category} tags")
-        
-        # Strategy 1: If we have specific tracks tagged, try to play one
-        if tracks:
-            # Sort by confidence and pick the highest confidence track
-            track = max(tracks, key=lambda x: x['confidence'])
-            print(f"🎵 Trying to play tagged track: {track['entity_name']}")
-            
-            if track['entity_id']:  # We have a Spotify URI
-                success = self.play_track(track['entity_id'])
-                if success:
-                    # Log the play with tag info
-                    self.db.log_play_history(track['entity_name'], 'Unknown', spotify_uri=track['entity_id'])
-                    return True
-            else:
-                # No URI, try to search for the track
-                found_track = self.search_track_fuzzy(track['entity_name'])
-                if found_track:
-                    success = self.play_track(found_track['uri'])
-                    if success:
-                        self.db.log_play_history(found_track['name'], found_track['artist'], found_track['album'], found_track['uri'])
-                        return True
-        
-        # Strategy 2: Play from tagged artists
-        if artists:
-            # Sort by confidence and pick the highest confidence artist
-            artist = max(artists, key=lambda x: x['confidence'])
-            print(f"🎵 Trying to play from tagged artist: {artist['entity_name']}")
-            
-            success = self.play_artist_collection(artist['entity_name'])
-            if success:
-                return True
-        
-        print(f"❌ Could not play any {tag_value} {tag_category} music")
-        return False
-    
+
     def play_track(self, track_uri: str) -> bool:
         """Play a track using AppleScript with verification"""
         print(f"🎵 Playing track: {track_uri}")
@@ -1606,35 +1508,37 @@ class ComprehensiveMusicAgent:
                 current = self.get_current_track()
                 mr = ModelResponse()
                 input_text = f"Tell me more about the song: {current['name']} by {current['artist']}"
-                return mr.get_info(input_text)
+                return mr.get_info(input_text)["output"]
 
             case SpotifyCommandType.DESCRIBE_ARTIST:
                 current = self.get_current_track()
                 mr = ModelResponse()
                 input_text = f"Tell me more about the artist: {current['artist']}"
-                return mr.get_info(input_text)
+                return mr.get_info(input_text)["output"]
 
             case SpotifyCommandType.DESCRIBE_GENRE:
                 current = self.get_current_track()
                 mr = ModelResponse()
                 input_text = f"Tell me more about the genre of this song: {current['name']} by {current['artist']}"
-                return mr.get_info(input_text)
+                return mr.get_info(input_text)["output"]
 
             case SpotifyCommandType.SIMILAR_MUSIC:
                 current = self.get_current_track()
                 mr = ModelResponse()
                 input_text = f"Suggest artists similar to: {current['artist']}"
-                return mr.get_info(input_text)
+                return mr.get_info(input_text)["output"]
 
-            case SpotifyCommandType.SEARCH_BY_NAME:
-                track = self.search_track_fuzzy(command.search_phrase)
-                if track:
-                    return f"Found: {track['name']} by {track['artist']} from {track['album']}"
-                else:
-                    return f"Could not find: '{command.search_phrase}'"
-
-            case SpotifyCommandType.PLAY_BY_NAME:
-                track = self.search_track_fuzzy(command.search_phrase)
+            case (
+                SpotifyCommandType.PLAY_BY_TITLE,
+                SpotifyCommandType.PLAY_BY_ARTIST,
+                SpotifyCommandType.PLAY_BY_GENRE,
+            ):
+                search_type = {
+                    SpotifyCommandType.PLAY_BY_TITLE: "track",
+                    SpotifyCommandType.PLAY_BY_ARTIST: "artist",
+                    SpotifyCommandType.PLAY_BY_GENRE: "playlist"
+                }[command.type]
+                track = self.search_track_fuzzy(command.search_phrase, search_type)
 
                 if track:
                     if track.get('is_playable', True):
@@ -1647,13 +1551,6 @@ class ComprehensiveMusicAgent:
                         return f"Track not available for playback: {track['name']} by {track['artist']}"
                 else:
                     return f"Could not find track: '{command.search_phrase}'"
-
-            case SpotifyCommandType.SEARCH_BY_LYRICS:
-                track = self.search_by_lyrics(command.search_phrase)
-                if track:
-                    return f"Found: {track['name']} by {track['artist']}"
-                else:
-                    return f"Could not find song with lyrics: '{command.search_phrase}'"
 
             case None:
                 return "I don't understand the command. Please state your request again"

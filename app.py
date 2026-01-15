@@ -25,7 +25,7 @@ async def main():
             mode = input("⌨️  Press Enter to speak, or type a command: ").strip()
 
             if mode == "":
-                command = listener.listen(duration=2)
+                command = listener.listen(duration=5)
             else:
                 command = mode
 
@@ -39,12 +39,13 @@ async def main():
 
             result = await openai_runner.run(spotify_agent, command, session=session)
             response = result.final_output
-            print(response.verbal_response)
-            await read_text(response.verbal_response)
-
-            response = spotify_handler.handle_command(response)
             print(response)
-            await read_text(response)
+            # print(response.verbal_response)
+            # await read_text(response.verbal_response)
+
+            # response = spotify_handler.handle_command(response)
+            # print(response)
+            # await read_text(response)
             print()
 
         except KeyboardInterrupt:

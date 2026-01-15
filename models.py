@@ -15,16 +15,14 @@ class SpotifyCommandType(enum.StrEnum):
     DESCRIBE_GENRE = "Describe the currently playing genre"
     SIMILAR_MUSIC = "Recommend me music similar to the currently playing"
 
-    PLAY_BY_NAME = "Find and play content by title, artist, playlist or genre"
-    SEARCH_BY_NAME = "Find by title, artist or playlist name - without playing"
-    SEARCH_BY_LYRICS = "Find by lyrics - without playing"
+    PLAY_BY_TITLE = "Find and play content by song title"
+    PLAY_BY_ARTIST = "Find and play content by artist"
+    PLAY_BY_GENRE = "Find and play content by genre"
 
 
 class SpotifyOperation(BaseModel):
     type: SpotifyCommandType
-    search_phrase: str | None = Field(
-        description="Phrase to put into Spotify search bar."
-    )
+    search_phrase: str | None
     verbal_response: str = Field(
         description="Response of the friendly assistant describing their next action."
     )

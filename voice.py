@@ -42,7 +42,7 @@ async def read_text(text: str) -> None:
         model="gpt-4o-mini-tts",
         voice="coral",
         input=text,
-        instructions="Speak in a neutral, pleasant voice of an assistant",
+        instructions="Speak in a neutral, pleasant voice.",
         response_format="pcm",
     ) as response:
         await LocalAudioPlayer().play(response)
